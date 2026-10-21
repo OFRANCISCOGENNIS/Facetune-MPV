@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0e0e12" />
+    <title>FaceTune MVP</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <label class="btn" title="Abrir foto">
+          <input id="file" type="file" accept="image/*" hidden />
+          Abrir
+        </label>
+        <div class="spacer"></div>
+        <button id="undo" class="btn icon" title="Desfazer" disabled>↶</button>
+        <button id="redo" class="btn icon" title="Refazer" disabled>↷</button>
+        <button id="compare" class="btn" title="Segure para ver o original" disabled>Antes</button>
+        <button id="export" class="btn primary" disabled>Salvar</button>
+      </header>
+
+      <main id="stage">
+        <div id="empty" class="empty">
+          <h1>FaceTune MVP</h1>
+          <p>Retoque de retratos direto no navegador. Nada sai do seu dispositivo.</p>
+          <label class="btn primary big">
+            <input id="file2" type="file" accept="image/*" hidden />
+            Escolher foto
+          </label>
+          <p class="hint">ou arraste uma imagem para cá</p>
+        </div>
+        <div id="canvasWrap" class="canvas-wrap" hidden>
+          <canvas id="canvas"></canvas>
+          <div id="cursor" class="cursor" hidden></div>
+        </div>
+      </main>
+
+      <section id="panel" class="panel" hidden></section>
+
+      <nav id="tools" class="tools" hidden>
+        <button data-tool="smooth" class="tool active"><span>✨</span>Suavizar</button>
+        <button data-tool="heal" class="tool"><span>🩹</span>Corrigir</button>
+        <button data-tool="whiten" class="tool"><span>🦷</span>Clarear</button>
+        <button data-tool="details" class="tool"><span>🔍</span>Detalhes</button>
+        <button data-tool="reshape" class="tool"><span>👆</span>Remodelar</button>
+        <button data-tool="adjust" class="tool"><span>🎚️</span>Ajustes</button>
+        <button data-tool="filters" class="tool"><span>🎨</span>Filtros</button>
+      </nav>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
