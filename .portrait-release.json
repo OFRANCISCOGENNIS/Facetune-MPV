@@ -1,0 +1,28 @@
+{
+  "revision": "2ba06250c78934d5243d",
+  "files": {
+    ".nojekyll": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "README.md": "5b65b958819b40b3aa21ec8b6c739f860bc07ff0d36b008007a8e0dd2094f343",
+    "app.js": "5658ad937bcfbc5b4feb076b94927eb07f7d492947ec4f70335301b5f0e58013",
+    "assets/demo.png": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+    "assets/fonts/InstrumentSerif-OFL.txt": "129ed7618959716959f2941fdd5b49e0ad6e6c1d78726761786a00253d865521",
+    "assets/fonts/InstrumentSerif-Regular.ttf": "498efd461f6ddfcb7a111bf9a565709d2085d48201d501ead960d93e84ffbb88",
+    "assets/fonts/Manrope-OFL.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+    "assets/fonts/Manrope.ttf": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+    "assets/icons/icon-192.png": "ee1cc06a854ee7a0beaa2e37756838918dc4e16100eec3ce7cca013853389e18",
+    "assets/icons/icon-512.png": "f2552c760aefbc2f00857d9c20186020dc6170ef8a74d6c27ea25a79becf0922",
+    "assets/icons/icon.svg": "013c1256e14eb0dc8f8cb75aa7bcf6562df7f478fc25923e1f2f6082aad477bf",
+    "index.html": "cee9f06d25a6ba78306fe0a3a0a8634f36e7cfd299741aa13ce3609c6e202f79",
+    "manifest.webmanifest": "6a7bfde8408c036e18236305194d7df438dd9e229b4d75521a4748cab0c11feb",
+    "runtime.js": "582ad4ee1335e6c83236d0b8f04695647cb6f8d7d10046e8b7046a2b077cc936",
+    "styles.css": "d3e7237d8734e3d157e0fd6154132e56b4dfc3b8158d29ff432406003957ee09",
+    "sw.js": "37704e274f8b23bff921c2730038a2970301558d1de1535f90c3e00222794ae1",
+    "vendor/heic-to/LICENSE": "dbd7222d8026e5d6ca6991d1e6a205de927f300840433c2e90a60644a9980c75",
+    "vendor/heic-to/SOURCES.md": "d7ace8593a5c1676d1ded7bf18450f58a09caad221d01a9afdf7ff5ef07ac595",
+    "vendor/heic-to/UPSTREAM-README.md": "70b08f14342d7a3c811034600427fecb1a7b874e1dec3e8f6dc755b591742431",
+    "vendor/heic-to/heic-to.js": "51863d8412839e22eadbd944173533de0092fc056a82f1e11fd931ec88190064",
+    "vendor/heic-to/libde265-COPYING": "02cc1585a20677992e0ba578fa692635dc193735f2691dc81de924b51c4e8020",
+    "vendor/heic-to/libheif-COPYING": "fa81ce652315b013359d6e8e4744335f31a50c7c192907176d3632f78a3b4596",
+    "vendor/heic-to/provenance.json": "e9d86a7e073e32f1e3729a66590478bb530009cfaa3422e7703ae0aaec4376c2"
+  }
+}

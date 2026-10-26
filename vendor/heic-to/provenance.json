@@ -1,0 +1,12 @@
+{
+  "name": "heic-to",
+  "version": "1.6.6",
+  "license": "LGPL-3.0-or-later",
+  "source": "https://github.com/hoppergee/heic-to",
+  "npm": "https://registry.npmjs.org/heic-to/-/heic-to-1.6.6.tgz",
+  "npm_integrity": "sha512-PYpOtPFEzgPxIoGF4LQ+oBD8o/tMvcFDNynrNzK1fLXfE6mTe2W+AHOvBKc5MwnVak4/Pnb51g9CJAtWL5YGWA==",
+  "libheif": "1.23.6",
+  "libde265": "1.0.16 (upstream build instruction)",
+  "sha256": "51863d8412839e22eadbd944173533de0092fc056a82f1e11fd931ec88190064",
+  "modified": false
+}
