@@ -21,7 +21,7 @@ O arquivo único `portrait.html` continua disponível, com fontes e HEIC incluí
 
 ## Interface
 
-- Abas Ajustes, Retoque e Filtros; seleção e navegação por setas, Home e End.
+- Abas Ajustes, Retoque, Filtros, Remodelar e Corte; seleção e navegação por setas, Home e End.
 - Valores numéricos e preenchimento dos controles; estados de carregamento, erro e indisponibilidade.
 - Miniaturas de filtros baseadas na foto importada; comparador antes/depois com alça arrastável e controle por teclado.
 - Ajuda acessível em quatro passos, link para pular ao editor, foco visível e respeito a movimento reduzido.
@@ -29,9 +29,17 @@ O arquivo único `portrait.html` continua disponível, com fontes e HEIC incluí
 
 ## Recursos e limites
 
-Importação por seletor ou arraste de JPG/PNG/WebP/HEIC/HEIF até 25 MB; edição em Canvas no navegador; iluminação, temperatura, saturação, suavização aproximada com preservação de bordas; área manual ajustável por ponteiro/teclado; seis filtros originais com intensidade; grão e vinheta; contraste, realces, sombras, vivacidade e nitidez; clareamento manual localizado; corte por proporções e reposicionamento; giro/espelho; comparação; histórico de até 30 estados; restauração e download JPEG. Imagens são limitadas a 1600 px no maior lado para reduzir memória e latência. Os ajustes sempre partem do original; não se acumulam sobre o resultado anterior.
+Importação por seletor ou arraste de JPG/PNG/WebP/HEIC/HEIF até 25 MB; edição em Canvas no navegador; iluminação, temperatura, saturação, suavização aproximada com preservação de bordas; área manual ajustável por ponteiro/teclado; seis filtros originais com intensidade; grão e vinheta; contraste, realces, sombras, vivacidade e nitidez; clareamento manual localizado; corte por proporções e reposicionamento; giro/espelho; remodelação manual em três modos (Mover, Encolher e Expandir), com pincel de tamanho/intensidade ajustáveis; comparação; histórico de até 30 estados; restauração e download JPEG. Imagens são limitadas a 1600 px no maior lado para reduzir memória e latência. Filtros e ajustes de cor são recalculados a partir do original deformado pela malha, sem reaplicar filtros sobre o resultado anterior. A remodelação compõe os traços em uma malha reversível e preserva os pixels da foto original.
 
 Fotos não são enviadas a um servidor. Não há analytics, modelos externos ou dependências remotas em execução. HEIC/HEIF usa o decodificador nativo quando disponível, com fallback local heic-to 1.6.6 em Web Worker. O decodificador é incluído na pasta vendor/ e no HTML único; não exige CDN ou serviço de conversão. São reconhecidos nome, MIME e assinatura do contêiner, inclusive arquivos de iPhone sem MIME. Conversões não substituem importações mais recentes; erros preservam a foto anterior. Recarregar/fechar a página descarta a edição. Suavização e clareamento não fazem segmentação de pele/dentes nem IA; a seleção da área é manual. O original inteiro é mantido em memória para corte e giro reversíveis. Antes/depois compara o mesmo enquadramento, e restaurar ajustes volta à imagem inteira. No modo local, iluminação, suavização e clareamento são limitados à elipse; cor e filtros continuam globais. Sem vídeo, reconstrução facial, RAW, HDR ou preservação de metadados. O histórico de até 30 estados dura apenas a sessão atual. JPEG usa fundo branco para transparência. Fotos muito grandes podem exceder a memória durante a decodificação. Em HEIC/HEIF com várias imagens, apenas a primeira é importada; não há Live Photo, preservação de HDR, dados de profundidade ou metadados. A conversão tem limite de espera de 45 segundos; variantes não suportadas recebem uma mensagem de erro. O fallback foi testado no Chromium com HEIC real; Safari/iOS e outros aparelhos não foram validados nesta máquina.
+
+## Remodelar
+
+Abra uma foto e selecione **Remodelar**. Em **Mover**, arraste a área que deseja ajustar. **Encolher** e **Expandir** aceitam clique ou arraste. Ajuste o tamanho do círculo e comece com intensidade baixa. A alça antes/depois mostra o original no mesmo enquadramento. Cada traço pode ser desfeito/refeito; **Remover remodelação** preserva os outros ajustes e também pode ser desfeito.
+
+Aceita mouse, caneta via Pointer Events e toque. No teclado, foque a foto e use setas para posicionar; Shift + setas aplica Mover, Enter aplica Encolher/Expandir e Esc cancela um traço em andamento. Desative “Ativar pincel” para interagir sem deformar. A ferramenta fica disponível nessa aba e é ocultada quando a comparação mostra somente o original.
+
+É deformação manual por malha, sem reconhecimento facial ou IA. Corte, giro e espelho são calculados após a deformação, que permanece nas coordenadas da foto de origem. Durante o traço a prévia usa no máximo 900 px no maior lado; ao soltar ou exportar, volta à resolução de edição (até 1600 px). Traços intensos ou repetidos podem distorcer fundos e texturas; não há reconstrução de conteúdo nem pincel de restauração parcial. Detalhes de implementação e validação em `docs/RESHAPE.md`.
 
 ## MVP ampliado e referências
 
@@ -60,10 +68,12 @@ Playwright precisa estar disponível para o Node e Chromium em `/usr/bin/chromiu
 node web/tests/browser.cjs
 node web/tests/interface.cjs
 node web/tests/heic.cjs
+node web/tests/reshape-engine.cjs
+node web/tests/reshape.cjs
 ```
 
 Para o arquivo único, sirva `dist/` na porta 3001 e execute `node web/tests/offline.cjs`. Para análise automática de acessibilidade, instale `@axe-core/playwright@4.11.1` em uma pasta de ferramentas fora do checkout e forneça seu caminho com `PORTRAIT_AXE_PATH`; execute `node web/tests/accessibility.cjs` com o servidor da porta 3000 ativo.
 
 O teste HEIC também usa a porta 3001 para verificar o HTML independente com a rede desligada. Para outras portas, use `PORTRAIT_TEST_ORIGIN` e `PORTRAIT_STANDALONE_ORIGIN`.
 
-Relatórios da entrega: `upgrade-test-results.json` (1 transição entre versões com cache HTTP já preenchido, sem interromper a edição aberta), `advanced-test-results.json` (19 verificações dos novos ajustes, preset/intensidade, clareamento, geometria, histórico e exportação), `pwa-test-results.json` (8 verificações de PWA, recarga offline, HEIC, JPEG, subdiretórios e alternativa sem createImageBitmap), `heic-test-results.json` (11 verificações de HEIC real, HEIF, MIME ausente, assinatura, arraste, JPEG, corrupção, concorrência e modo offline), `test-results.json` (15 verificações funcionais), `interface-test-results.json` (9 verificações de interface), `offline-test-results.json` (4 verificações do HTML independente) e `accessibility-test-results.json` (7 estados inspecionados com axe WCAG 2 A/AA e 2.1 AA). A análise automática não é certificação completa de acessibilidade. Não foram testados Safari/Firefox, leitor de tela ou aparelhos físicos. Publicação e execução são documentadas em `docs/DEPLOYMENT.md`; o resultado da publicação é registrado em `dist/deployment.json`, sem presumir prontidão antes da validação HTTP. O teste iOS continua separado.
+Relatórios da entrega: `reshape-test-results.json` (20 verificações de remodelação, incluindo pixels, histórico, corte/giro/espelho, mouse/toque/teclado e exportação em 1600 px), `upgrade-test-results.json` (1 transição entre versões com cache HTTP já preenchido, sem interromper a edição aberta), `advanced-test-results.json` (19 verificações dos novos ajustes, preset/intensidade, clareamento, geometria, histórico e exportação), `pwa-test-results.json` (9 verificações de PWA, recarga offline, HEIC, JPEG, subdiretórios e alternativa sem createImageBitmap), `heic-test-results.json` (11 verificações de HEIC real, HEIF, MIME ausente, assinatura, arraste, JPEG, corrupção, concorrência e modo offline), `test-results.json` (15 verificações funcionais), `interface-test-results.json` (9 verificações de interface), `offline-test-results.json` (5 verificações do HTML independente) e `accessibility-test-results.json` (9 estados inspecionados com axe WCAG 2 A/AA e 2.1 AA). A análise automática não é certificação completa de acessibilidade. Não foram testados Safari/Firefox, leitor de tela ou aparelhos físicos. Publicação e execução são documentadas em `docs/DEPLOYMENT.md`; o resultado da publicação é registrado em `dist/deployment.json`, sem presumir prontidão antes da validação HTTP. O teste iOS continua separado.
