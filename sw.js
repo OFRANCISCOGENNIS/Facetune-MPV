@@ -1,7 +1,7 @@
 'use strict';
 // The release builder replaces the revision and asset list with content-derived values.
-const REVISION = 'e07833712d18653dcda5';
-const PRECACHE_URLS = ["./", "README.md", "app.js", "assets/demo.png", "assets/fonts/InstrumentSerif-OFL.txt", "assets/fonts/InstrumentSerif-Regular.ttf", "assets/fonts/Manrope-OFL.txt", "assets/fonts/Manrope.ttf", "assets/icons/icon-192.png", "assets/icons/icon-512.png", "assets/icons/icon.svg", "index.html", "manifest.webmanifest", "reshape.js", "runtime.js", "styles.css", "vendor/heic-to/LICENSE", "vendor/heic-to/SOURCES.md", "vendor/heic-to/UPSTREAM-README.md", "vendor/heic-to/heic-to.js", "vendor/heic-to/libde265-COPYING", "vendor/heic-to/libheif-COPYING", "vendor/heic-to/provenance.json"];
+const REVISION = 'b5ef2903c3257f34399e';
+const PRECACHE_URLS = ["./", "README.md", "app.js", "assets/demo.png", "assets/fonts/InstrumentSerif-OFL.txt", "assets/fonts/InstrumentSerif-Regular.ttf", "assets/fonts/Manrope-OFL.txt", "assets/fonts/Manrope.ttf", "assets/icons/icon-192.png", "assets/icons/icon-512.png", "assets/icons/icon.svg", "filters.js", "index.html", "manifest.webmanifest", "reshape.js", "runtime.js", "styles.css", "vendor/heic-to/LICENSE", "vendor/heic-to/SOURCES.md", "vendor/heic-to/UPSTREAM-README.md", "vendor/heic-to/heic-to.js", "vendor/heic-to/libde265-COPYING", "vendor/heic-to/libheif-COPYING", "vendor/heic-to/provenance.json"];
 const PREFIX = `portrait:${new URL(self.registration.scope).pathname}:`;
 const CACHE_NAME = PREFIX + REVISION;
 const assetURLs = new Set(PRECACHE_URLS.map(path => new URL(path, self.registration.scope).href));

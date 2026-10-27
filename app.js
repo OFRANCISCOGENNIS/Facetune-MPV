@@ -13,6 +13,7 @@
   let hasImage = false, rotation = 0, flipped = false;
   let history = [], historyIndex = -1;
   const reshape = globalThis.PortraitReshape;
+  const filters = globalThis.PortraitFilters;
   let shapeField, masterPixels, shapeId=0, nextShapeId=1, shapeVersion=0;
   let shapeStates=new Map(), shapeStroke=null, shapeFrame=0;
   let brushCenter={x:.5,y:.5}, view=null, warpedVersion='', warpedCanvas=document.createElement('canvas');
@@ -20,6 +21,8 @@
   $('pane-filters').style.setProperty('--filter-image', `url("${demoSource}")`);
   let pixels, softPixels, imageName = 'retrato', filter = 'natural', frame = 0, importRevision = 0;
   let center = { x: .5, y: .4 }, exportURL;
+  let filterCategory = 'all';
+  buildFilterGallery();
   const status = (text, state = 'ready') => {
     $('status-text').textContent = text;
     $('status').dataset.state = state;
@@ -84,6 +87,52 @@
     $('image-badge').textContent = 'EDITADA';
     syncShapeUI();
   }
+  function buildFilterGallery() {
+    for(const preset of filters.presets){
+      const button=document.createElement('button');button.type='button';button.className='filter';
+      button.dataset.filter=preset.id;button.dataset.category=preset.category;
+      button.setAttribute('aria-pressed',String(preset.id==='natural'));
+      button.classList.toggle('selected',preset.id==='natural');
+      button.innerHTML='<span class="filter-art" aria-hidden="true"><span class="filter-check"><svg class="icon"><use href="#i-check"/></svg></span></span><span class="filter-name"></span>';
+      const name=button.querySelector('.filter-name');name.textContent=preset.name;
+      const description=document.createElement('small');description.textContent=preset.description;name.append(description);
+      $('filter-gallery').append(button);
+    }
+    for(const category of filters.categories){
+      const button=document.createElement('button');button.type='button';button.className='filter-category';
+      button.dataset.category=category.id;button.textContent=category.name;
+      button.onclick=()=>setFilterCategory(category.id);$('filter-categories').append(button);
+    }
+    setFilterCategory('all');
+  }
+  function setFilterCategory(name) {
+    filterCategory=name;
+    document.querySelectorAll('.filter-category').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.category===filterCategory)));
+    let count=0;
+    document.querySelectorAll('.filter').forEach(button=>{
+      button.hidden=filterCategory!=='all' && button.dataset.category!==filterCategory;
+      if(!button.hidden)count++;
+    });
+    $('filter-count').textContent=`${count} filtros disponíveis`;
+  }
+  function updateFilterPreviews(image) {
+    // One source crop, the same recipes as export, always at 100% before other adjustments.
+    const thumbnail=document.createElement('canvas');thumbnail.width=128;thumbnail.height=96;
+    const tc=thumbnail.getContext('2d',{willReadFrequently:true});
+    const scale=Math.max(128/image.width,96/image.height),width=128/scale,height=96/scale;
+    tc.drawImage(image,(image.width-width)/2,(image.height-height)*.28,width,height,0,0,128,96);
+    const input=tc.getImageData(0,0,128,96),output=tc.createImageData(128,96),rgb=[0,0,0];
+    $('pane-filters').style.setProperty('--filter-image',`url("${thumbnail.toDataURL('image/jpeg',.8)}")`);
+    for(const preset of filters.presets){
+      for(let i=0;i<input.data.length;i+=4){
+        const r=input.data[i],g=input.data[i+1],b=input.data[i+2];
+        preset.apply(r,g,b,(.2126*r+.7152*g+.0722*b)/255,rgb);
+        output.data[i]=rgb[0];output.data[i+1]=rgb[1];output.data[i+2]=rgb[2];output.data[i+3]=input.data[i+3];
+      }
+      tc.putImageData(output,0,0);
+      document.querySelector(`[data-filter="${preset.id}"] .filter-art`).style.backgroundImage=`url("${thumbnail.toDataURL('image/png')}")`;
+    }
+  }
   function render() {
     frame = 0;
     if (!pixels) return;
@@ -92,6 +141,7 @@
     const box = regionGeometry(), w = canvas.width, h = canvas.height;
     const output = context.createImageData(w, h), data = output.data;
     const gain = 2 ** v.exposure, contrast = 1 + v.contrast * .75;
+    const applyFilter=v.intensity && filter!=='natural'?filters.get(filter).apply:null,filtered=[0,0,0];
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4;
@@ -119,13 +169,10 @@
           g = g*(1-amount)+luma*amount+amount*25;
           b = b*(1-amount)+luma*amount+amount*35;
         }
-        let pr=r, pg=g, pb=b;
-        if (filter==='mono') pr=pg=pb=.2126*r+.7152*g+.0722*b;
-        if (filter==='warm') { pr=r*1.04+8; pg=g*1.01+3; pb=b*.94; }
-        if (filter==='film') { pr=r*.85+24; pg=g*.86+20; pb=b*.84+22; }
-        if (filter==='portrait') { pr=r*.98+8; pg=g*.96+6; pb=b*.94+5; }
-        if (filter==='cinema') { const shadow=1-luminance; pr=r*1.03+5-shadow*7; pg=g*.97+4; pb=b*.94+shadow*18; }
-        if(v.intensity===1){r=pr;g=pg;b=pb;}else if(v.intensity){r+=(pr-r)*v.intensity;g+=(pg-g)*v.intensity;b+=(pb-b)*v.intensity;}
+        if(applyFilter){
+          applyFilter(r,g,b,luminance,filtered);
+          if(v.intensity===1){r=filtered[0];g=filtered[1];b=filtered[2];}else{r+=(filtered[0]-r)*v.intensity;g+=(filtered[1]-g)*v.intensity;b+=(filtered[2]-b)*v.intensity;}
+        }
         if (v.vignette) {
           const radius = ((x/w-.5)**2+(y/h-.5)**2)*2;
           const factor = 1-v.vignette*Math.min(1,radius)*.65;
@@ -228,9 +275,7 @@
     softPixels=blurContext.getImageData(0,0,outWidth,outHeight).data;
     // Filter thumbnails refresh at stroke boundaries, rather than on every pointer event.
     if(!shapeStroke){
-      const thumbnail=document.createElement('canvas');thumbnail.width=220;thumbnail.height=Math.max(1,Math.round(height*220/width));
-      thumbnail.getContext('2d').drawImage(working,0,0,thumbnail.width,thumbnail.height);
-      $('pane-filters').style.setProperty('--filter-image',`url("${thumbnail.toDataURL('image/jpeg',.8)}")`);
+      updateFilterPreviews(working);
     }
     $('dimensions').textContent=`${width} × ${height} px`;
     $('crop-position').hidden=!ratio;$('rotation-value').textContent=`${rotation*90}°`;
@@ -316,9 +361,10 @@
     updateHistoryButtons();
   }
   function setFilter(name) {
-    filter = name;
+    const preset=filters.get(name);filter=preset.id;
+    $('active-filter-name').textContent=preset.name;
     document.querySelectorAll('.filter').forEach((button) => {
-      const selected = button.dataset.filter === name;
+      const selected = button.dataset.filter === filter;
       button.classList.toggle('selected', selected);
       button.setAttribute('aria-pressed', String(selected));
     });
