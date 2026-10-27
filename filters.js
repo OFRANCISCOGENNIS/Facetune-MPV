@@ -27,9 +27,15 @@
     {id:'olive',name:'Oliva',description:'Verdes discretos',category:'vintage',apply:grade({saturation:.72,contrast:.94,lift:5,gain:[1,1.04,.9],shadows:[3,6,-2]})},
     {id:'sepia',name:'Sépia',description:'Um retrato de época',category:'vintage',apply:(r,g,b,l,out)=>{out[0]=.393*r+.769*g+.189*b;out[1]=.349*r+.686*g+.168*b;out[2]=.272*r+.534*g+.131*b;}},
     {id:'noir',name:'Noir',description:'P&B marcante',category:'mono',apply:grade({saturation:0,contrast:1.32,lift:-3})},
+    {id:'aura',name:'Aura',description:'Rosa e luz suave',category:'social',apply:grade({saturation:.86,contrast:.86,lift:13,offset:[9,0,9]})},
+    {id:'flash',name:'Soft Flash',description:'Luz direta, cor suave',category:'social',apply:grade({saturation:.82,contrast:1.13,lift:9,highlights:[8,8,8]})},
+    {id:'clean',name:'Clean',description:'Branco e cor equilibrados',category:'social',apply:grade({saturation:.9,contrast:1.04,lift:6,gain:[1,1.01,1.02]})},
+    {id:'editorial',name:'Editorial',description:'Cor contida, presença forte',category:'social',apply:grade({saturation:.55,contrast:1.17,shadows:[-3,2,6],highlights:[7,3,-2]})},
+    {id:'pop',name:'Pop',description:'Cores vivas para o feed',category:'social',apply:grade({saturation:1.35,contrast:1.1,offset:[3,0,3]})},
+    {id:'dream',name:'Dream',description:'Pastel com sombra lavanda',category:'social',apply:grade({saturation:.66,contrast:.79,lift:18,shadows:[12,1,16]})},
     {id:'silver',name:'Prata',description:'P&B suave e luminoso',category:'mono',apply:grade({saturation:0,contrast:.88,lift:11})}
   ];
   const byId = new Map(presets.map(preset=>[preset.id,preset]));
-  const categories = [{id:'all',name:'Todos'}, {id:'portrait',name:'Retratos'}, {id:'cinema',name:'Cinema'}, {id:'vintage',name:'Vintage'}, {id:'mono',name:'P&B'}];
+  const categories = [{id:'all',name:'Todos'}, {id:'portrait',name:'Retratos'}, {id:'cinema',name:'Cinema'}, {id:'vintage',name:'Vintage'}, {id:'mono',name:'P&B'}, {id:'social',name:'Social'}];
   globalThis.PortraitFilters = {presets,categories,get:id=>byId.get(id)||byId.get('natural')};
 })();

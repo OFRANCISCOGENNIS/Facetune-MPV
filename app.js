@@ -7,9 +7,13 @@
   const blurred = document.createElement('canvas');
   const blurContext = blurred.getContext('2d', { willReadFrequently: true });
   const defaults = { exposure:0, warmth:0, saturation:0, smooth:0, contrast:0, highlights:0,
-    shadows:0, vibrance:0, sharpness:0, whiten:0, intensity:100, grain:0, vignette:0 };
+    shadows:0, vibrance:0, sharpness:0, whiten:0, intensity:100, grain:0, vignette:0,
+    tint:0,blacks:0,whites:0,clarity:0,dehaze:0,glow:0 };
   const controls = Object.keys(defaults);
   const master = document.createElement('canvas');
+  const fullSource=document.createElement('canvas');
+  let nativeSize={width:0,height:0},photoGeneration=0,aiRequest=0,aiBusy=false,aiError='',aiMask=null,aiViewMask=null,aiMode='none',exporting=false;
+  const exportAssetURLs=new Map();
   let hasImage = false, rotation = 0, flipped = false;
   let history = [], historyIndex = -1;
   const reshape = globalThis.PortraitReshape;
@@ -133,6 +137,92 @@
       document.querySelector(`[data-filter="${preset.id}"] .filter-art`).style.backgroundImage=`url("${thumbnail.toDataURL('image/png')}")`;
     }
   }
+  function aiSettings(){return {mode:aiMode,strength:Number($('ai-strength').value)/100,color:$('ai-color').value};}
+  function geometrySettings(){return {...view,rotation,flipped,masterWidth:master.width,masterHeight:master.height};}
+  function syncAIUI(){
+    $('analyze-ai').disabled=!hasImage||aiBusy;$('analyze-ai').setAttribute('aria-busy',String(aiBusy));
+    $('analyze-ai').textContent=aiBusy?'Analisando no dispositivo…':aiMask?'Analisar novamente':'Analisar retrato com IA';
+    $('ai-mode').disabled=!aiMask;$('ai-strength').disabled=!aiMask||aiMode==='none';$('ai-color').disabled=!aiMask||aiMode!=='color';$('ai-mask-preview').disabled=!aiMask;
+    $('ai-strength-value').value=$('ai-strength').value;updateRange($('ai-strength'));
+    $('ai-status').dataset.state=aiError?'error':'ready';
+    $('ai-status').textContent=aiBusy?'Carregando o modelo e identificando pessoa/fundo. Nenhuma foto é enviada.':aiError|| (aiMask?'Seleção IA pronta. Escolha um efeito ou confira a seleção.':'Pronto para analisar. Sua foto permanece neste navegador.');
+  }
+  async function analyzePortrait(){
+    if(!hasImage||aiBusy)return;
+    const generation=photoGeneration,request=++aiRequest,snapshot=document.createElement('canvas'),scale=Math.min(1,512/Math.max(master.width,master.height));
+    snapshot.width=Math.max(1,Math.round(master.width*scale));snapshot.height=Math.max(1,Math.round(master.height*scale));snapshot.getContext('2d').drawImage(master,0,0,snapshot.width,snapshot.height);
+    aiBusy=true;aiError='';syncAIUI();status('Analisando retrato com IA no seu navegador…');
+    try{
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const result=await PortraitAI.analyze(snapshot);
+      if(generation!==photoGeneration||request!==aiRequest)return;
+      recordHistory();aiMask=result;aiMode=aiMode==='none'?'blur':aiMode;$('ai-mode').value=aiMode;
+      rebuildGeometry();recordHistory();status('Retrato analisado com IA. Experimente os efeitos de pessoa e fundo.');
+    }catch(error){if(generation===photoGeneration&&request===aiRequest){aiError=error.message;status(aiError,'error');}}
+    finally{aiBusy=false;syncAIUI();}
+  }
+  function updateHistogram(data){
+    const histogram=PortraitEngine.histogram(data),canvas=$('histogram'),ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
+    const peak=Math.max(1,...histogram.red,...histogram.green,...histogram.blue);
+    for(const [bins,color] of [[histogram.red,'#c47b73'],[histogram.green,'#5a8464'],[histogram.blue,'#6a8eb5']]){
+      ctx.beginPath();ctx.moveTo(0,canvas.height);
+      for(let x=0;x<256;x++)ctx.lineTo(x*canvas.width/255,canvas.height-Math.sqrt(bins[x]/peak)*(canvas.height-4));
+      ctx.lineTo(canvas.width,canvas.height);ctx.closePath();ctx.fillStyle=color+'55';ctx.fill();ctx.strokeStyle=color;ctx.stroke();
+    }
+    $('histogram-summary').textContent=`Luz mediana ${histogram.median}/255 · extremos recortados ${(histogram.clipped*100).toFixed(1)}%`;
+  }
+  function outputDimensions(){
+    if(!view)return {width:0,height:0,upscaled:false};
+    const selected=$('export-resolution').value,ratio=Number($('crop-ratio').value);
+    const rw=rotation%2?fullSource.height:fullSource.width,rh=rotation%2?fullSource.width:fullSource.height;
+    let sourceWidth=rw,sourceHeight=rh;
+    if(ratio>0){if(rw/rh>ratio)sourceWidth=Math.max(1,Math.round(rh*ratio));else sourceHeight=Math.max(1,Math.round(rw/ratio));}
+    let width=sourceWidth,height=sourceHeight;
+    if(selected==='preview'){width=view.width;height=view.height;}
+    if(selected==='4k'){const aspect=ratio>0?ratio:rw/rh;if(aspect>=1){width=3840;height=Math.max(1,Math.round(3840/aspect));}else{height=3840;width=Math.max(1,Math.round(3840*aspect));}}
+    return {width,height,upscaled:width>sourceWidth+1||height>sourceHeight+1};
+  }
+  function updateExportInfo(){
+    $('export').disabled=!hasImage||exporting;$('export-4k').disabled=!hasImage||exporting;
+    const size=outputDimensions(),png=$('export-format').value==='image/png';
+    $('export-quality-control').hidden=png;$('export-quality-value').value=$('export-quality').value;updateRange($('export-quality'));
+    $('export-dimensions').textContent=hasImage?`${size.width} × ${size.height} px`:'—';
+    $('export-note').textContent=size.upscaled?'Ampliação por interpolação. Não reconstrói detalhes com IA.':aiMode==='remove'&&!png?'Escolha PNG para manter o fundo transparente.':'O enquadramento e os efeitos serão preservados.';
+    if(hasImage)$('source-info').textContent=`Entrada: ${nativeSize.width} × ${nativeSize.height} px. Fonte de exportação: ${fullSource.width} × ${fullSource.height} px. A prévia leve não reduz a fonte guardada para exportar.`;
+  }
+  function exportAsset(name){
+    const embedded=globalThis.PortraitEmbeddedExport?.[name];
+    if(!embedded)return new URL(name,location.href).href;
+    if(!exportAssetURLs.has(name))exportAssetURLs.set(name,URL.createObjectURL(new Blob([embedded],{type:'text/javascript'})));
+    return exportAssetURLs.get(name);
+  }
+  async function exportPhoto(){
+    if(!pixels||exporting)return;
+    if(shapeStroke)finishShapeStroke();if(frame){cancelAnimationFrame(frame);render();}
+    const generation=photoGeneration,name=imageName,mime=$('export-format').value,extension=mime==='image/png'?'png':'jpg',size=outputDimensions();
+    const options={...size,geometry:geometrySettings(),field:shapeField?.effect?reshape.clone(shapeField):null,
+      values:Object.fromEntries(controls.map(id=>[id,Number($(id).value)/100])),local:$('local').checked,box:regionGeometry(),filter,mask:aiMask,ai:aiSettings(),mime,quality:Number($('export-quality').value)/100};
+    exporting=true;updateExportInfo();status(`Preparando ${size.width} × ${size.height} px…`);
+    let worker,timer,source;
+    try{
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      let blob;
+      if(typeof Worker!=='undefined'&&typeof OffscreenCanvas!=='undefined'&&typeof createImageBitmap==='function'){
+        source=await createImageBitmap(fullSource);worker=new Worker(exportAsset('export-worker.js'));
+        blob=await new Promise((resolve,reject)=>{
+          timer=setTimeout(()=>reject(new Error('A exportação demorou demais. Tente a prévia leve ou um enquadramento menor.')),90000);
+          worker.onmessage=event=>event.data.error?reject(new Error(event.data.error)):resolve(event.data.blob);
+          worker.onerror=()=>reject(new Error('Não foi possível iniciar a exportação neste navegador. Tente a prévia leve.'));
+          worker.postMessage({source,options,assets:{filters:exportAsset('filters.js'),reshape:exportAsset('reshape.js'),engine:exportAsset('engine.js')}},[source]);source=null;
+        });
+      }else{blob=await PortraitEngine.exportPhoto(fullSource,options);}
+      if(generation!==photoGeneration)return;
+      if(exportURL)URL.revokeObjectURL(exportURL);exportURL=URL.createObjectURL(blob);
+      const anchor=document.createElement('a');anchor.href=exportURL;anchor.download=`${name}-portrait.${extension}`;document.body.append(anchor);anchor.click();anchor.remove();
+      status(`Foto exportada em ${mime==='image/png'?'PNG':'JPEG'} · ${size.width} × ${size.height} px.`);
+    }catch(error){if(generation===photoGeneration)status(error.message||'Não foi possível exportar. Tente uma resolução menor.','error');}
+    finally{clearTimeout(timer);source?.close?.();worker?.terminate();exporting=false;updateExportInfo();}
+  }
   function render() {
     frame = 0;
     if (!pixels) return;
@@ -140,58 +230,18 @@
     const local = $('local').checked;
     const box = regionGeometry(), w = canvas.width, h = canvas.height;
     const output = context.createImageData(w, h), data = output.data;
-    const gain = 2 ** v.exposure, contrast = 1 + v.contrast * .75;
-    const applyFilter=v.intensity && filter!=='natural'?filters.get(filter).apply:null,filtered=[0,0,0];
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const distance = local ? Math.hypot((x / w - box.x) / (box.width / 2), (y / h - box.y) / (box.height / 2)) : 0;
-        const mask = local ? Math.max(0, Math.min(1, (1 - distance) * 4)) : 1;
-        // Original SDR algorithms, not copies of any commercial application's pipeline.
-        const difference = Math.abs(pixels[i] - softPixels[i]) + Math.abs(pixels[i+1] - softPixels[i+1]) + Math.abs(pixels[i+2] - softPixels[i+2]);
-        const blend = v.smooth * mask * Math.max(0, 1 - difference / 100) * .85;
-        let r = pixels[i] * (1-blend) + softPixels[i] * blend + (pixels[i]-softPixels[i]) * v.sharpness * .7 * (1-blend);
-        let g = pixels[i+1] * (1-blend) + softPixels[i+1] * blend + (pixels[i+1]-softPixels[i+1]) * v.sharpness * .7 * (1-blend);
-        let b = pixels[i+2] * (1-blend) + softPixels[i+2] * blend + (pixels[i+2]-softPixels[i+2]) * v.sharpness * .7 * (1-blend);
-        const light = local ? 1 + (gain-1) * mask : gain;
-        r = r * light + v.warmth * 22; g = g * light + v.warmth * 4; b = b * light - v.warmth * 20;
-        const luminance = Math.max(0, Math.min(1, (.2126*r+.7152*g+.0722*b)/255));
-        const tone = v.shadows * 50 * (1-luminance)**2 + v.highlights * 50 * luminance**2;
-        r = (r+tone-128)*contrast+128; g = (g+tone-128)*contrast+128; b = (b+tone-128)*contrast+128;
-        let luma = .2126*r+.7152*g+.0722*b;
-        const chroma = (Math.max(r,g,b)-Math.min(r,g,b))/255;
-        const saturation = 1 + v.saturation + v.vibrance * (1-Math.min(1,chroma)) * .8;
-        r = luma+(r-luma)*saturation; g = luma+(g-luma)*saturation; b = luma+(b-luma)*saturation;
-        if (local && v.whiten) {
-          const amount = v.whiten * mask * .65;
-          luma = .2126*r+.7152*g+.0722*b;
-          r = r*(1-amount)+luma*amount+amount*25;
-          g = g*(1-amount)+luma*amount+amount*25;
-          b = b*(1-amount)+luma*amount+amount*35;
-        }
-        if(applyFilter){
-          applyFilter(r,g,b,luminance,filtered);
-          if(v.intensity===1){r=filtered[0];g=filtered[1];b=filtered[2];}else{r+=(filtered[0]-r)*v.intensity;g+=(filtered[1]-g)*v.intensity;b+=(filtered[2]-b)*v.intensity;}
-        }
-        if (v.vignette) {
-          const radius = ((x/w-.5)**2+(y/h-.5)**2)*2;
-          const factor = 1-v.vignette*Math.min(1,radius)*.65;
-          r*=factor; g*=factor; b*=factor;
-        }
-        if (v.grain) {
-          // Stable per-pixel noise: changing controls never randomizes the photo.
-          const seed = (Math.imul(x+1,374761393)^Math.imul(y+1,668265263))>>>0;
-          const noise = ((seed%1024)/1023-.5)*v.grain*28;
-          r+=noise; g+=noise; b+=noise;
-        }
-        data[i]=r; data[i+1]=g; data[i+2]=b; data[i+3]=pixels[i+3];
-      }
+    data.set(PortraitEngine.color(pixels,softPixels,w,h,v,{local,box,filter}));
+    if(aiViewMask){
+      data.set(PortraitEngine.composite(data,w,h,aiViewMask,aiSettings()));
     }
+    updateHistogram(data);
+    if(aiViewMask&&$('ai-mask-preview').checked)for(let i=0;i<data.length;i+=4){const amount=aiViewMask[i]/255*.5;data[i]=data[i]*(1-amount)+35*amount;data[i+1]=data[i+1]*(1-amount)+190*amount;data[i+2]=data[i+2]*(1-amount)+210*amount;}
     context.putImageData(output,0,0);
+    updateExportInfo();
     updateHistoryButtons();
   }
   function settingsSnapshot() {
-    return JSON.stringify({shape:shapeId,values:Object.fromEntries(controls.map(id=>[id,$(id).value])),filter,rotation,flipped,
+    return JSON.stringify({shape:shapeId,ai:aiSettings(),values:Object.fromEntries(controls.map(id=>[id,$(id).value])),filter,rotation,flipped,
       crop:$('crop-ratio').value,cropX:$('crop-x').value,cropY:$('crop-y').value,
       local:$('local').checked,size:$('size').value,aspect:$('aspect').value,center:{...center}});
   }
@@ -217,6 +267,7 @@
     restoreShape(state.shape||0);
     for(const id of controls)$(id).value=state.values[id];
     rotation=state.rotation;flipped=state.flipped;filter=state.filter;center={...state.center};
+    aiMode=state.ai?.mode||'none';$('ai-mode').value=aiMode;$('ai-strength').value=Math.round((state.ai?.strength??.7)*100);$('ai-color').value=state.ai?.color||'#c9d7c4';
     $('crop-ratio').value=state.crop;$('crop-x').value=state.cropX;$('crop-y').value=state.cropY;
     $('local').checked=state.local;$('size').value=state.size;$('aspect').value=state.aspect;
     syncLocalControls();setFilter(filter);rebuildGeometry();updateHistoryButtons();
@@ -264,6 +315,7 @@
     const wc=working.getContext('2d',{willReadFrequently:true});
     if(shapeField?.effect)drawView(shapedMaster(scale),wc);else wc.drawImage(original,0,0);
     pixels=wc.getImageData(0,0,outWidth,outHeight).data;
+    aiViewMask=aiMask?PortraitEngine.geometry(PortraitEngine.fromPixels(aiMask.data,aiMask.width,aiMask.height),geometrySettings(),outWidth,outHeight,shapeField).getContext('2d').getImageData(0,0,outWidth,outHeight).data:null;
     const pad=Math.max(3,Math.round(outWidth/300));
     const padded=document.createElement('canvas');padded.width=outWidth+pad*2;padded.height=outHeight+pad*2;
     const pc=padded.getContext('2d');pc.drawImage(working,pad,pad);
@@ -280,7 +332,7 @@
     $('dimensions').textContent=`${width} × ${height} px`;
     $('crop-position').hidden=!ratio;$('rotation-value').textContent=`${rotation*90}°`;
     for(const id of ['crop-x','crop-y','size','aspect'])updateRange($(id));
-    placeRegion();compare();scheduleRender();
+    placeRegion();compare();syncAIUI();updateExportInfo();scheduleRender();
   }
   function restoreShape(id) {
     if(!shapeStates.has(id))throw new Error('Missing reshape history state');
@@ -373,6 +425,7 @@
   function reset() {
     if(shapeStroke)finishShapeStroke(true);
     if(hasImage)restoreShape(0);
+    aiRequest++;aiError='';aiMode='none';$('ai-mode').value='none';$('ai-strength').value='70';$('ai-color').value='#c9d7c4';$('ai-mask-preview').checked=false;
     for (const id of controls) $(id).value = String(defaults[id]);
     $('local').checked = false; $('region').hidden = true; $('region-options').hidden = true;
     center = { x: .5, y: .4 }; $('size').value='40';$('aspect').value='13';
@@ -451,6 +504,11 @@
       if (token !== importRevision || !bitmap) return;
       const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
       const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
+      nativeSize={width:bitmap.width,height:bitmap.height};
+      const sourceScale=Math.min(1,3840/Math.max(bitmap.width,bitmap.height));
+      fullSource.width=Math.max(1,Math.round(bitmap.width*sourceScale));fullSource.height=Math.max(1,Math.round(bitmap.height*sourceScale));
+      fullSource.getContext('2d').drawImage(bitmap,0,0,fullSource.width,fullSource.height);
+      photoGeneration++;aiMask=null;aiViewMask=null;
       master.width=width;master.height=height;
       master.getContext('2d').drawImage(bitmap,0,0,width,height);hasImage=true;
       masterPixels=master.getContext('2d').getImageData(0,0,width,height).data;
@@ -595,21 +653,18 @@
   // Prevent an accidental drop outside the editor from navigating away.
   window.addEventListener('dragover', event => event.preventDefault());
   window.addEventListener('drop', event => event.preventDefault());
-  $('export').onclick = () => {
-    if (!pixels) return;
-    if(shapeStroke)finishShapeStroke();
-    if (frame) { cancelAnimationFrame(frame); render(); }
-    // JPEG has no alpha; composite transparency onto white explicitly.
-    const target = document.createElement('canvas'); target.width = canvas.width; target.height = canvas.height;
-    const tc = target.getContext('2d'); tc.fillStyle = '#fff'; tc.fillRect(0, 0, target.width, target.height); tc.drawImage(canvas, 0, 0);
-    target.toBlob(blob => {
-      if (!blob) { status('Não foi possível exportar. Tente novamente.', 'error'); return; }
-      if (exportURL) URL.revokeObjectURL(exportURL);
-      exportURL = URL.createObjectURL(blob);
-      const anchor = document.createElement('a'); anchor.href = exportURL; anchor.download = `${imageName}-portrait.jpg`;
-      document.body.append(anchor); anchor.click(); anchor.remove();
-      status('Foto exportada em JPEG. Pronta para o próximo capítulo.');
-    }, 'image/jpeg', .95);
+  $('analyze-ai').onclick=analyzePortrait;
+  $('ai-mode').onchange=()=>{aiMode=$('ai-mode').value;if(aiMode==='remove'){$('ai-strength').value='100';$('export-format').value='image/png';}syncAIUI();scheduleRender();recordHistory();};
+  $('ai-strength').oninput=()=>{syncAIUI();scheduleRender();};$('ai-strength').onchange=recordHistory;
+  $('ai-color').oninput=scheduleRender;$('ai-color').onchange=recordHistory;$('ai-mask-preview').onchange=scheduleRender;
+  for(const id of ['export-resolution','export-format','export-quality']){$(id).oninput=updateExportInfo;$(id).onchange=updateExportInfo;}
+  $('export').onclick=exportPhoto;$('export-4k').onclick=()=>{$('export-resolution').value='4k';exportPhoto();};
+  $('auto-tone').onclick=()=>{
+    if(!pixels)return;recordHistory();const h=PortraitEngine.histogram(pixels),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+    const values={exposure:h.median?Math.round(clamp(Math.log2(120/h.median)*100,-40,50)):0,contrast:h.high>h.low?Math.round(clamp((155/(h.high-h.low)-1)*100,-20,25)):0,
+      shadows:h.low<55?Math.round((55-h.low)*.45):0,highlights:h.high>215?-Math.round((h.high-215)*.6):0,vibrance:15};
+    for(const [id,value] of Object.entries(values))$(id).value=value;scheduleRender();recordHistory();status('Luz e cor equilibradas por análise tonal. Você pode ajustar ou desfazer.');
   };
-  window.addEventListener('pagehide', () => { if (exportURL) URL.revokeObjectURL(exportURL); });
+  syncAIUI();updateExportInfo();
+  window.addEventListener('pagehide', () => { if(exportURL)URL.revokeObjectURL(exportURL);for(const url of exportAssetURLs.values())URL.revokeObjectURL(url);exportAssetURLs.clear(); });
 })();
