@@ -1,6 +1,6 @@
 'use strict';
 // The release builder replaces the revision and asset list with content-derived values.
-const REVISION = '2ba06250c78934d5243d';
+const REVISION = '45d4309bdb77d737a881';
 const PRECACHE_URLS = ["./", "README.md", "app.js", "assets/demo.png", "assets/fonts/InstrumentSerif-OFL.txt", "assets/fonts/InstrumentSerif-Regular.ttf", "assets/fonts/Manrope-OFL.txt", "assets/fonts/Manrope.ttf", "assets/icons/icon-192.png", "assets/icons/icon-512.png", "assets/icons/icon.svg", "index.html", "manifest.webmanifest", "runtime.js", "styles.css", "vendor/heic-to/LICENSE", "vendor/heic-to/SOURCES.md", "vendor/heic-to/UPSTREAM-README.md", "vendor/heic-to/heic-to.js", "vendor/heic-to/libde265-COPYING", "vendor/heic-to/libheif-COPYING", "vendor/heic-to/provenance.json"];
 const PREFIX = `portrait:${new URL(self.registration.scope).pathname}:`;
 const CACHE_NAME = PREFIX + REVISION;

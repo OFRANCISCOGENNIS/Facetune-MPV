@@ -6,7 +6,12 @@
   const sourceContext = original.getContext('2d', { willReadFrequently: true });
   const blurred = document.createElement('canvas');
   const blurContext = blurred.getContext('2d', { willReadFrequently: true });
-  const controls = ['exposure', 'warmth', 'saturation', 'smooth'];
+  const defaults = { exposure:0, warmth:0, saturation:0, smooth:0, contrast:0, highlights:0,
+    shadows:0, vibrance:0, sharpness:0, whiten:0, intensity:100, grain:0, vignette:0 };
+  const controls = Object.keys(defaults);
+  const master = document.createElement('canvas');
+  let hasImage = false, rotation = 0, flipped = false;
+  let history = [], historyIndex = -1;
   const demoSource = document.querySelector('#demo img').src;
   $('pane-filters').style.setProperty('--filter-image', `url("${demoSource}")`);
   let pixels, softPixels, imageName = 'retrato', filter = 'natural', frame = 0, importRevision = 0;
@@ -34,9 +39,9 @@
   document.querySelectorAll('.tool-tab').forEach(tab => {
     tab.onclick = () => setTab(tab.dataset.tab);
     tab.onkeydown = event => {
-      const names = ['adjust', 'retouch', 'filters'];
+      const names = [...document.querySelectorAll('.tool-tab')].map(tab => tab.dataset.tab);
       const index = names.indexOf(tab.dataset.tab);
-      const next = { ArrowRight: (index + 1) % 3, ArrowLeft: (index + 2) % 3, Home: 0, End: 2 }[event.key];
+      const next = { ArrowRight: (index + 1) % names.length, ArrowLeft: (index + names.length - 1) % names.length, Home: 0, End: names.length - 1 }[event.key];
       if (next === undefined) return;
       event.preventDefault(); setTab(names[next], true);
     };
@@ -51,7 +56,7 @@
 
   function regionGeometry() {
     const width = Number($('size').value) / 100;
-    return { x: center.x, y: center.y, width, height: Math.min(.95, width * canvas.width / canvas.height * 1.3) };
+    return { x: center.x, y: center.y, width, height: Math.min(.95, width * canvas.width / canvas.height * Number($('aspect').value) / 10) };
   }
   function placeRegion() {
     const box = regionGeometry(), element = $('region');
@@ -75,36 +80,125 @@
   function render() {
     frame = 0;
     if (!pixels) return;
-    const exposure = Number($('exposure').value) / 100;
-    const warmth = Number($('warmth').value) / 100;
-    const saturation = 1 + Number($('saturation').value) / 100;
-    const smooth = Number($('smooth').value) / 100;
+    const v = Object.fromEntries(controls.map(id => [id, Number($(id).value) / 100]));
     const local = $('local').checked;
     const box = regionGeometry(), w = canvas.width, h = canvas.height;
     const output = context.createImageData(w, h), data = output.data;
-    const gain = 2 ** exposure;
+    const gain = 2 ** v.exposure, contrast = 1 + v.contrast * .75;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4;
-        const d = Math.hypot((x / w - box.x) / (box.width / 2), (y / h - box.y) / (box.height / 2));
-        const mask = local ? Math.max(0, Math.min(1, (1 - d) * 4)) : 1;
-        // Preserve high-frequency edges; this is an approximate smoothing filter, not skin segmentation.
-        const difference = Math.abs(pixels[i] - softPixels[i]) + Math.abs(pixels[i + 1] - softPixels[i + 1]) + Math.abs(pixels[i + 2] - softPixels[i + 2]);
-        const blend = smooth * mask * Math.max(0, 1 - difference / 100) * .85;
-        let r = pixels[i] * (1 - blend) + softPixels[i] * blend;
-        let g = pixels[i + 1] * (1 - blend) + softPixels[i + 1] * blend;
-        let b = pixels[i + 2] * (1 - blend) + softPixels[i + 2] * blend;
-        const light = local ? 1 + (gain - 1) * mask : gain;
-        r = r * light + warmth * 22; g = g * light + warmth * 4; b = b * light - warmth * 20;
-        const luma = .2126 * r + .7152 * g + .0722 * b;
-        r = luma + (r - luma) * saturation; g = luma + (g - luma) * saturation; b = luma + (b - luma) * saturation;
-        if (filter === 'mono') r = g = b = .2126 * r + .7152 * g + .0722 * b;
-        if (filter === 'warm') { r = r * 1.04 + 8; g = g * 1.01 + 3; b = b * .94; }
-        if (filter === 'film') { r = r * .85 + 24; g = g * .86 + 20; b = b * .84 + 22; }
-        data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = pixels[i + 3];
+        const distance = local ? Math.hypot((x / w - box.x) / (box.width / 2), (y / h - box.y) / (box.height / 2)) : 0;
+        const mask = local ? Math.max(0, Math.min(1, (1 - distance) * 4)) : 1;
+        // Original SDR algorithms, not copies of any commercial application's pipeline.
+        const difference = Math.abs(pixels[i] - softPixels[i]) + Math.abs(pixels[i+1] - softPixels[i+1]) + Math.abs(pixels[i+2] - softPixels[i+2]);
+        const blend = v.smooth * mask * Math.max(0, 1 - difference / 100) * .85;
+        let r = pixels[i] * (1-blend) + softPixels[i] * blend + (pixels[i]-softPixels[i]) * v.sharpness * .7 * (1-blend);
+        let g = pixels[i+1] * (1-blend) + softPixels[i+1] * blend + (pixels[i+1]-softPixels[i+1]) * v.sharpness * .7 * (1-blend);
+        let b = pixels[i+2] * (1-blend) + softPixels[i+2] * blend + (pixels[i+2]-softPixels[i+2]) * v.sharpness * .7 * (1-blend);
+        const light = local ? 1 + (gain-1) * mask : gain;
+        r = r * light + v.warmth * 22; g = g * light + v.warmth * 4; b = b * light - v.warmth * 20;
+        const luminance = Math.max(0, Math.min(1, (.2126*r+.7152*g+.0722*b)/255));
+        const tone = v.shadows * 50 * (1-luminance)**2 + v.highlights * 50 * luminance**2;
+        r = (r+tone-128)*contrast+128; g = (g+tone-128)*contrast+128; b = (b+tone-128)*contrast+128;
+        let luma = .2126*r+.7152*g+.0722*b;
+        const chroma = (Math.max(r,g,b)-Math.min(r,g,b))/255;
+        const saturation = 1 + v.saturation + v.vibrance * (1-Math.min(1,chroma)) * .8;
+        r = luma+(r-luma)*saturation; g = luma+(g-luma)*saturation; b = luma+(b-luma)*saturation;
+        if (local && v.whiten) {
+          const amount = v.whiten * mask * .65;
+          luma = .2126*r+.7152*g+.0722*b;
+          r = r*(1-amount)+luma*amount+amount*25;
+          g = g*(1-amount)+luma*amount+amount*25;
+          b = b*(1-amount)+luma*amount+amount*35;
+        }
+        let pr=r, pg=g, pb=b;
+        if (filter==='mono') pr=pg=pb=.2126*r+.7152*g+.0722*b;
+        if (filter==='warm') { pr=r*1.04+8; pg=g*1.01+3; pb=b*.94; }
+        if (filter==='film') { pr=r*.85+24; pg=g*.86+20; pb=b*.84+22; }
+        if (filter==='portrait') { pr=r*.98+8; pg=g*.96+6; pb=b*.94+5; }
+        if (filter==='cinema') { const shadow=1-luminance; pr=r*1.03+5-shadow*7; pg=g*.97+4; pb=b*.94+shadow*18; }
+        if(v.intensity===1){r=pr;g=pg;b=pb;}else if(v.intensity){r+=(pr-r)*v.intensity;g+=(pg-g)*v.intensity;b+=(pb-b)*v.intensity;}
+        if (v.vignette) {
+          const radius = ((x/w-.5)**2+(y/h-.5)**2)*2;
+          const factor = 1-v.vignette*Math.min(1,radius)*.65;
+          r*=factor; g*=factor; b*=factor;
+        }
+        if (v.grain) {
+          // Stable per-pixel noise: changing controls never randomizes the photo.
+          const seed = (Math.imul(x+1,374761393)^Math.imul(y+1,668265263))>>>0;
+          const noise = ((seed%1024)/1023-.5)*v.grain*28;
+          r+=noise; g+=noise; b+=noise;
+        }
+        data[i]=r; data[i+1]=g; data[i+2]=b; data[i+3]=pixels[i+3];
       }
     }
-    context.putImageData(output, 0, 0);
+    context.putImageData(output,0,0);
+    updateHistoryButtons();
+  }
+  function settingsSnapshot() {
+    return JSON.stringify({values:Object.fromEntries(controls.map(id=>[id,$(id).value])),filter,rotation,flipped,
+      crop:$('crop-ratio').value,cropX:$('crop-x').value,cropY:$('crop-y').value,
+      local:$('local').checked,size:$('size').value,aspect:$('aspect').value,center:{...center}});
+  }
+  function updateHistoryButtons() {
+    const pending = hasImage && settingsSnapshot()!==history[historyIndex];
+    $('undo').disabled = !hasImage || (historyIndex<=0 && !pending);
+    $('redo').disabled = !hasImage || pending || historyIndex>=history.length-1;
+  }
+  function recordHistory() {
+    if (!hasImage) return;
+    const snapshot=settingsSnapshot();
+    if (snapshot!==history[historyIndex]) {
+      history=history.slice(0,historyIndex+1);history.push(snapshot);
+      if(history.length>30)history.shift();historyIndex=history.length-1;
+    }
+    updateHistoryButtons();
+  }
+  function restoreSnapshot(index) {
+    const state=JSON.parse(history[index]);historyIndex=index;
+    for(const id of controls)$(id).value=state.values[id];
+    rotation=state.rotation;flipped=state.flipped;filter=state.filter;center={...state.center};
+    $('crop-ratio').value=state.crop;$('crop-x').value=state.cropX;$('crop-y').value=state.cropY;
+    $('local').checked=state.local;$('size').value=state.size;$('aspect').value=state.aspect;
+    syncLocalControls();setFilter(filter);rebuildGeometry();updateHistoryButtons();
+  }
+  function syncLocalControls() {
+    $('region').hidden=!$('local').checked;$('region-options').hidden=!$('local').checked;
+    $('whiten').disabled=!$('local').checked;
+  }
+  function rebuildGeometry() {
+    if(!hasImage)return;
+    const rotated=document.createElement('canvas');
+    rotated.width=rotation%2 ? master.height:master.width;
+    rotated.height=rotation%2 ? master.width:master.height;
+    const rc=rotated.getContext('2d');rc.translate(rotated.width/2,rotated.height/2);
+    rc.scale(flipped?-1:1,1);rc.rotate(rotation*Math.PI/2);rc.drawImage(master,-master.width/2,-master.height/2);
+    const ratio=Number($('crop-ratio').value);
+    let width=rotated.width,height=rotated.height;
+    if(ratio>0){if(width/height>ratio)width=Math.max(1,Math.round(height*ratio));else height=Math.max(1,Math.round(width/ratio));}
+    const left=Math.round((rotated.width-width)*Number($('crop-x').value)/100);
+    const top=Math.round((rotated.height-height)*Number($('crop-y').value)/100);
+    for(const c of [canvas,original,blurred]){c.width=width;c.height=height;}
+    sourceContext.drawImage(rotated,left,top,width,height,0,0,width,height);
+    pixels=sourceContext.getImageData(0,0,width,height).data;
+    const pad=Math.max(3,Math.round(width/300));
+    const padded=document.createElement('canvas');padded.width=width+pad*2;padded.height=height+pad*2;
+    const pc=padded.getContext('2d');pc.drawImage(original,pad,pad);
+    pc.drawImage(original,0,0,width,1,pad,0,width,pad);
+    pc.drawImage(original,0,height-1,width,1,pad,pad+height,width,pad);
+    pc.drawImage(original,0,0,1,height,0,pad,pad,height);
+    pc.drawImage(original,width-1,0,1,height,pad+width,pad,pad,height);
+    blurContext.filter=`blur(${Math.max(1.2,width/450)}px)`;blurContext.drawImage(padded,-pad,-pad);blurContext.filter='none';
+    softPixels=blurContext.getImageData(0,0,width,height).data;
+    const thumbnail=document.createElement('canvas');thumbnail.width=220;thumbnail.height=Math.max(1,Math.round(height*220/width));
+    thumbnail.getContext('2d').drawImage(original,0,0,thumbnail.width,thumbnail.height);
+    $('pane-filters').style.setProperty('--filter-image',`url("${thumbnail.toDataURL('image/jpeg',.8)}")`);
+    $('dimensions').textContent=`${width} × ${height} px`;
+    $('crop-position').hidden=!ratio;
+    $('rotation-value').textContent=`${rotation*90}°`;
+    for(const id of ['crop-x','crop-y','size','aspect'])updateRange($(id));
+    placeRegion();compare();scheduleRender();
   }
   function scheduleRender() {
     for (const id of controls) {
@@ -113,6 +207,7 @@
       updateRange($(id));
     }
     if (!frame) frame = requestAnimationFrame(render);
+    updateHistoryButtons();
   }
   function setFilter(name) {
     filter = name;
@@ -124,11 +219,13 @@
     scheduleRender();
   }
   function reset() {
-    for (const id of controls) $(id).value = '0';
+    for (const id of controls) $(id).value = String(defaults[id]);
     $('local').checked = false; $('region').hidden = true; $('region-options').hidden = true;
-    center = { x: .5, y: .4 }; $('size').value = '40'; updateRange($('size'));
+    center = { x: .5, y: .4 }; $('size').value='40';$('aspect').value='13';
+    rotation=0;flipped=false;$('crop-ratio').value='0';$('crop-x').value=$('crop-y').value='50';
+    syncLocalControls();
     $('compare').checked = false; $('split').value = '50';
-    setFilter('natural'); placeRegion(); compare();
+    setFilter('natural'); rebuildGeometry(); placeRegion(); compare();
   }
   async function decodeNativeImage(blob) {
     if (typeof createImageBitmap === 'function') {
@@ -199,31 +296,15 @@
       if (token !== importRevision || !bitmap) return;
       const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
       const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
-      for (const c of [canvas, original, blurred]) { c.width = width; c.height = height; }
-      sourceContext.drawImage(bitmap, 0, 0, width, height);
-      pixels = sourceContext.getImageData(0, 0, width, height).data;
-      // Replicate borders around the blur so the edge pixels do not darken.
-      const pad = Math.max(3, Math.round(width / 300));
-      const padded = document.createElement('canvas'); padded.width = width + pad * 2; padded.height = height + pad * 2;
-      const pc = padded.getContext('2d'); pc.drawImage(original, pad, pad);
-      pc.drawImage(original, 0, 0, width, 1, pad, 0, width, pad);
-      pc.drawImage(original, 0, height - 1, width, 1, pad, pad + height, width, pad);
-      pc.drawImage(original, 0, 0, 1, height, 0, pad, pad, height);
-      pc.drawImage(original, width - 1, 0, 1, height, pad + width, pad, pad, height);
-      blurContext.filter = `blur(${Math.max(1.2, width / 450)}px)`;
-      blurContext.drawImage(padded, -pad, -pad); blurContext.filter = 'none';
-      softPixels = blurContext.getImageData(0, 0, width, height).data;
-      // Reuse a small local preview for all filter cards; never send the original to a service.
-      const thumbnail = document.createElement('canvas'); thumbnail.width = 220;
-      thumbnail.height = Math.max(1, Math.round(height * 220 / width));
-      thumbnail.getContext('2d').drawImage(original, 0, 0, thumbnail.width, thumbnail.height);
-      $('pane-filters').style.setProperty('--filter-image', `url("${thumbnail.toDataURL('image/jpeg', .8)}")`);
+      master.width=width;master.height=height;
+      master.getContext('2d').drawImage(bitmap,0,0,width,height);hasImage=true;
+      history=[];historyIndex=-1;
       imageName = filename.replace(/\.[^.]+$/, '') || 'retrato';
       $('filename').textContent = filename;
       $('dimensions').textContent = `${width} × ${height} px${scale < 1 ? ' · otimizada para edição' : ''}`;
       $('empty').hidden = true; $('photo-frame').hidden = false;
       for (const id of ['tools', 'compare', 'export', 'reset']) $(id).disabled = false;
-      reset(); render(); status(converted ? 'HEIC/HEIF convertido. Sua foto está pronta para editar.' : 'Sua foto está pronta. Experimente as ferramentas.');
+      reset(); render(); recordHistory(); status(converted ? 'HEIC/HEIF convertido. Sua foto está pronta para editar.' : 'Sua foto está pronta. Experimente as ferramentas.');
     } catch {
       if (token === importRevision) status(heif
         ? 'Não foi possível abrir este HEIC/HEIF. O arquivo pode estar danificado ou usar uma variante não suportada.'
@@ -249,16 +330,27 @@
   $('import').onclick = $('replace').onclick = () => $('file').click();
   $('file').onchange = () => { const file = $('file').files[0]; if (file) load(file, file.name); $('file').value = ''; };
   $('demo').onclick = loadDemo;
-  for (const id of controls) $(id).addEventListener('input', scheduleRender);
-  document.querySelectorAll('.filter').forEach(button => button.onclick = () => setFilter(button.dataset.filter));
-  $('reset').onclick = () => { reset(); status('Ajustes restaurados. Sua foto original está intacta.'); };
+  for (const id of controls) {
+    $(id).addEventListener('input',scheduleRender);
+    $(id).addEventListener('change',recordHistory);
+  }
+  document.querySelectorAll('.filter').forEach(button => button.onclick = () => { setFilter(button.dataset.filter);recordHistory(); });
+  $('reset').onclick = () => { reset(); recordHistory(); status('Ajustes restaurados. Sua foto original está intacta.'); };
   $('compare').onchange = compare; $('split').oninput = compare;
   $('local').onchange = () => {
-    $('region').hidden = !$('local').checked;
-    $('region-options').hidden = !$('local').checked;
-    placeRegion(); scheduleRender();
+    syncLocalControls();placeRegion();scheduleRender();recordHistory();
   };
-  $('size').oninput = () => { updateRange($('size')); placeRegion(); scheduleRender(); };
+  for(const id of ['size','aspect']) {
+    $(id).oninput=()=>{updateRange($(id));placeRegion();scheduleRender();};$(id).onchange=recordHistory;
+  }
+  $('crop-ratio').onchange=()=>{rebuildGeometry();recordHistory();};
+  for(const id of ['crop-x','crop-y']) {$(id).oninput=rebuildGeometry;$(id).onchange=recordHistory;}
+  $('rotate-left').onclick=()=>{rotation=(rotation+3)%4;rebuildGeometry();recordHistory();};
+  $('rotate-right').onclick=()=>{rotation=(rotation+1)%4;rebuildGeometry();recordHistory();};
+  $('flip-horizontal').onclick=()=>{flipped=!flipped;rebuildGeometry();recordHistory();};
+  $('clear-crop').onclick=()=>{$('crop-ratio').value='0';$('crop-x').value=$('crop-y').value='50';rebuildGeometry();recordHistory();};
+  $('undo').onclick=()=>{recordHistory();if(historyIndex>0)restoreSnapshot(historyIndex-1);};
+  $('redo').onclick=()=>{if(historyIndex<history.length-1)restoreSnapshot(historyIndex+1);};
   document.querySelectorAll('input[type=range]').forEach(updateRange);
   const handle = $('compare-handle'); let movingComparison = false;
   function moveComparison(clientX) {
@@ -289,12 +381,12 @@
     center.y = Math.max(0, Math.min(1, drag.center.y + (event.clientY - drag.y) / rect.height));
     placeRegion(); scheduleRender();
   };
-  region.onpointerup = region.onpointercancel = () => { drag = null; };
+  region.onpointerup = region.onpointercancel = () => { drag = null;recordHistory(); };
   region.onkeydown = event => {
     const delta = { ArrowLeft: [-.02, 0], ArrowRight: [.02, 0], ArrowUp: [0, -.02], ArrowDown: [0, .02] }[event.key];
     if (!delta) return;
     event.preventDefault(); center.x = Math.max(0, Math.min(1, center.x + delta[0])); center.y = Math.max(0, Math.min(1, center.y + delta[1]));
-    placeRegion(); scheduleRender();
+    placeRegion(); scheduleRender();recordHistory();
   };
   const dropzone = $('dropzone'); let dragDepth = 0;
   dropzone.ondragenter = event => { event.preventDefault(); dragDepth++; dropzone.classList.add('dragover'); };
