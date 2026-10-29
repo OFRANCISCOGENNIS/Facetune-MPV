@@ -344,7 +344,12 @@
     $('reshape-layer').hidden=!enabled;$('reshape-layer').tabIndex=enabled?0:-1;
     $('reshape-layer').style.clipPath=$('compare').checked?`inset(0 0 0 ${$('split').value}%)`:'none';
     $('region').hidden=!$('local').checked || selected;
-    for(const id of ['reshape-size','reshape-strength']){
+    $('open-reshape').disabled=!hasImage;$('open-reshape').hidden=selected;
+    $('reshape-layer').dataset.mode=$('reshape-mode').value;
+    $('reshape-axis-control').hidden=!$('reshape-symmetry').checked;
+    $('reshape-axis').hidden=!enabled||!$('reshape-symmetry').checked;
+    $('reshape-axis').style.left=$('reshape-axis-x').value+'%';
+    for(const id of ['reshape-size','reshape-strength','reshape-axis-x']){
       $(id+'-value').value=$(id).value;updateRange($(id));
     }
     positionBrush();
@@ -357,6 +362,9 @@
     cursor.style.left=brushCenter.x*100+'%';cursor.style.top=brushCenter.y*100+'%';
     cursor.style.width=brushRadius()*2/view.width*rect.width+'px';
     cursor.style.height=brushRadius()*2/view.height*rect.height+'px';
+    const mirror=$('reshape-mirror-cursor'),mx=2*Number($('reshape-axis-x').value)/100-brushCenter.x;
+    mirror.style.left=mx*100+'%';mirror.style.top=cursor.style.top;mirror.style.width=cursor.style.width;mirror.style.height=cursor.style.height;
+    mirror.hidden=!$('reshape-symmetry').checked||cursor.hidden||mx<0||mx>1;
   }
   function toMaster(point){
     const x=(point.x*(view.width-1)+view.left-(view.rw-1)/2)*(flipped?-1:1);
@@ -375,7 +383,11 @@
   }
   function stampShape(point,dx,dy){
     if(!shapeStroke)return;
-    const changed=reshape.stamp(shapeField,{...point,dx,dy,radius:brushRadius(),mode:$('reshape-mode').value,strength:Number($('reshape-strength').value)/100});
+    const sign=flipped?-1:1,horizontal=[[sign,0],[0,-sign],[-sign,0],[0,sign]][rotation],vertical=[[0,1],[1,0],[0,-1],[-1,0]][rotation];
+    const build=(p,vx,vy)=>{const origin=toMaster(p),to=toMaster({x:p.x+vx,y:p.y+vy});return {...origin,dx:to.x-origin.x,dy:to.y-origin.y,radius:brushRadius(),mode:$('reshape-mode').value,strength:Number($('reshape-strength').value)/100,horizontal,vertical};};
+    const brushes=[build(point,dx,dy)];
+    if($('reshape-symmetry').checked){const mx=2*Number($('reshape-axis-x').value)/100-point.x;if(mx>=0&&mx<=1)brushes.push(build({x:mx,y:point.y},-dx,dy));}
+    const changed=reshape.stamp(shapeField,brushes);
     if(!changed)return;
     if(!shapeStroke.changed){shapeId=nextShapeId++;shapeStroke.changed=true;}
     shapeVersion++;
@@ -388,7 +400,7 @@
     const steps=Math.min(256,Math.max(1,Math.ceil(distance/(brushRadius()*.2))));
     if(distance)for(let step=1;step<=steps;step++){
       const t=(step-.5)/steps;
-      stampShape({x:from.x+dx*t,y:from.y+dy*t},dx/steps,dy/steps);
+      stampShape({x:shapeStroke.last.x+(point.x-shapeStroke.last.x)*t,y:shapeStroke.last.y+(point.y-shapeStroke.last.y)*t},(point.x-shapeStroke.last.x)/steps,(point.y-shapeStroke.last.y)/steps);
     }
     shapeStroke.last={...point};
   }
@@ -568,28 +580,37 @@
   $('undo').onclick=()=>{if(shapeStroke){finishShapeStroke(true);return;}recordHistory();if(historyIndex>0)restoreSnapshot(historyIndex-1);};
   $('redo').onclick=()=>{if(historyIndex<history.length-1)restoreSnapshot(historyIndex+1);};
   document.querySelectorAll('input[type=range]').forEach(updateRange);
-  for(const id of ['reshape-size','reshape-strength'])$(id).oninput=syncShapeUI;
+  for(const id of ['reshape-size','reshape-strength','reshape-axis-x'])$(id).oninput=syncShapeUI;
+  $('reshape-symmetry').onchange=()=>{if(shapeStroke)finishShapeStroke();syncShapeUI();};
+  $('open-reshape').onclick=()=>{setTab('reshape',true);$('pane-reshape').scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});};
+  const reshapeProfiles={face:{size:55,strength:25,mode:'slim',hint:'Rosto: posicione o pincel sobre o contorno e clique suavemente para afinar a área.'},nose:{size:14,strength:25,mode:'slim',hint:'Nariz: posicione o pincel sobre o nariz e clique suavemente para reduzir a largura.'},eyes:{size:12,strength:20,mode:'expand',hint:'Olhos: posicione o pincel sobre um olho e clique para expandir. A simetria é opcional.'},lips:{size:16,strength:20,mode:'expand',hint:'Lábios: posicione o pincel sobre a boca e clique suavemente para dar volume.'},body:{size:60,strength:25,mode:'push',hint:'Corpo: arraste o contorno suavemente. Use Restaurar para corrigir apenas uma área.'}};
+  document.querySelectorAll('[data-reshape-profile]').forEach(button=>button.onclick=()=>{
+    if(shapeStroke)finishShapeStroke();const profile=reshapeProfiles[button.dataset.reshapeProfile];
+    $('reshape-size').value=profile.size;$('reshape-strength').value=profile.strength;$('reshape-mode').value=profile.mode;$('reshape-enabled').checked=true;
+    $('reshape-profile-tip').textContent=profile.hint+' A seleção é manual.';
+    document.querySelectorAll('[data-reshape-profile]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));syncShapeUI();
+  });
   $('reshape-enabled').onchange=()=>{if(shapeStroke)finishShapeStroke();syncShapeUI();};
-  $('reshape-mode').onchange=()=>{if(shapeStroke)finishShapeStroke();};
+  $('reshape-mode').onchange=()=>{if(shapeStroke)finishShapeStroke();syncShapeUI();};
   $('clear-reshape').onclick=()=>{if(shapeStroke)finishShapeStroke(true);restoreShape(0);rebuildGeometry();recordHistory();status('Remodelação removida. Os demais ajustes foram mantidos.');};
   const layer=$('reshape-layer');
   layer.onpointerdown=event=>{
     if(!hasImage || shapeStroke || (event.pointerType==='mouse' && event.button!==0))return;
-    event.preventDefault();layer.focus({preventScroll:true});brushCenter=pointerPoint(event);positionBrush();$('reshape-cursor').hidden=false;
+    event.preventDefault();layer.focus({preventScroll:true});brushCenter=pointerPoint(event);$('reshape-cursor').hidden=false;positionBrush();
     beginShapeStroke(event.pointerId);layer.setPointerCapture(event.pointerId);
-    if($('reshape-mode').value!=='push')stampShape(toMaster(brushCenter),0,0);
+    if($('reshape-mode').value!=='push')stampShape(brushCenter,0,0);
   };
   layer.onpointermove=event=>{
     if(shapeStroke && shapeStroke.pointerId!==event.pointerId)return;
-    brushCenter=pointerPoint(event);positionBrush();$('reshape-cursor').hidden=false;
+    brushCenter=pointerPoint(event);$('reshape-cursor').hidden=false;positionBrush();
     if(shapeStroke)moveShapeStroke(brushCenter);
   };
   layer.onpointerup=event=>{if(shapeStroke?.pointerId===event.pointerId){moveShapeStroke(pointerPoint(event));finishShapeStroke();}};
   layer.onpointercancel=event=>{if(shapeStroke?.pointerId===event.pointerId)finishShapeStroke(true);};
   layer.onlostpointercapture=()=>{if(shapeStroke)finishShapeStroke(true);};
-  layer.onpointerleave=()=>{if(!shapeStroke)$('reshape-cursor').hidden=true;};
-  layer.onfocus=()=>{positionBrush();$('reshape-cursor').hidden=false;};
-  layer.onblur=()=>{if(!shapeStroke)$('reshape-cursor').hidden=true;};
+  layer.onpointerleave=()=>{if(!shapeStroke){$('reshape-cursor').hidden=true;$('reshape-mirror-cursor').hidden=true;}};
+  layer.onfocus=()=>{$('reshape-cursor').hidden=false;positionBrush();};
+  layer.onblur=()=>{if(!shapeStroke){$('reshape-cursor').hidden=true;$('reshape-mirror-cursor').hidden=true;}};
   layer.onkeydown=event=>{
     if(event.key==='Escape'){if(shapeStroke)finishShapeStroke(true);event.preventDefault();return;}
     if(shapeStroke)return;
@@ -600,9 +621,9 @@
         const next={x:Math.max(0,Math.min(1,brushCenter.x+delta[0])),y:Math.max(0,Math.min(1,brushCenter.y+delta[1]))};
         beginShapeStroke(null);moveShapeStroke(next);brushCenter=next;finishShapeStroke();
       }else{brushCenter.x=Math.max(0,Math.min(1,brushCenter.x+delta[0]));brushCenter.y=Math.max(0,Math.min(1,brushCenter.y+delta[1]));}
-      positionBrush();$('reshape-cursor').hidden=false;
+      $('reshape-cursor').hidden=false;positionBrush();
     }else if(event.key==='Enter' && $('reshape-mode').value!=='push'){
-      event.preventDefault();beginShapeStroke(null);stampShape(toMaster(brushCenter),0,0);finishShapeStroke();
+      event.preventDefault();beginShapeStroke(null);stampShape(brushCenter,0,0);finishShapeStroke();
     }
   };
   window.addEventListener('resize',positionBrush);
